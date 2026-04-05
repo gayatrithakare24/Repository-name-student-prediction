@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Prediction</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+
+<body class="bg-light d-flex justify-content-center align-items-center vh-100">
+
+<div class="card p-4 shadow-lg" style="width: 400px;">
+    <h3 class="text-center mb-3">Student Prediction</h3>
+
+    <form method="POST">
+        <input class="form-control mb-3" name="hours" placeholder="Study Hours" required>
+        <input class="form-control mb-3" name="attendance" placeholder="Attendance %" required>
+        <input class="form-control mb-3" name="marks" placeholder="Marks" required>
+
+        <button class="btn btn-success w-100">Predict</button>
+    </form>
+
+    {% if result %}
+        <h4 class="text-center mt-3">
+            Result:
+            <span class="text-{{ 'success' if result=='PASS' else 'danger' }}">
+                {{result}}
+            </span>
+        </h4>
+    {% endif %}
+
+    <div class="text-center mt-3">
+        <a href="/dashboard">Back</a>
+    </div>
+</div>
+
+</body>
+</html>

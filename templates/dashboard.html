@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+
+<body class="bg-light">
+
+<div class="container mt-5">
+
+    <h2 class="text-center mb-4">Section {{section}} Dashboard</h2>
+
+    <!-- Add Student -->
+    <form action="/add_student" method="POST" class="row g-2 mb-4">
+        <div class="col-md-10">
+            <input name="name" placeholder="Enter Student Name" class="form-control" required>
+        </div>
+        <input name="section" value="{{section}}" hidden>
+        <div class="col-md-2">
+            <button class="btn btn-success w-100">Add Student</button>
+        </div>
+    </form>
+
+    <!-- Table -->
+    <div class="table-responsive">
+    <table class="table table-bordered table-striped text-center align-middle">
+
+        <thead class="table-dark">
+        <tr>
+            <th>Name</th>
+            <th>Attendance (%)</th>
+            <th>Study Hours</th>
+            <th>Unit1 (Out of 20)</th>
+            <th>Unit2 (Out of 20)</th>
+            <th>EndSem (Out of 60)</th>
+            <th>Predict</th>
+        </tr>
+        </thead>
+
+        <tbody>
+        {% for s in students %}
+        <tr>
+        <form action="/update/{{s.id}}" method="POST">
+
+            <td><b>{{s.name}}</b></td>
+
+            <td>
+                <input type="number" name="attendance" value="{{s.attendance}}"
+                class="form-control" min="0" max="100">
+            </td>
+
+            <td>
+                <input type="number" name="study_hours" value="{{s.study_hours}}"
+                class="form-control">
+            </td>
+
+            <td>
+                <input type="number" name="unit1" value="{{s.unit1}}"
+                class="form-control" max="20">
+            </td>
+
+            <td>
+                <input type="number" name="unit2" value="{{s.unit2}}"
+                class="form-control" max="20">
+            </td>
+
+            <td>
+                <input type="number" name="endsem" value="{{s.endsem}}"
+                class="form-control" max="60">
+            </td>
+
+            <td>
+                <button class="btn btn-primary btn-sm">Predict</button>
+
+                {% if request.args.get('result_' ~ s.id) %}
+                    <div class="mt-2 fw-bold
+                    {% if request.args.get('result_' ~ s.id) == 'PASS' %}text-success{% else %}text-danger{% endif %}">
+                        {{request.args.get('result_' ~ s.id)}}
+                    </div>
+                {% endif %}
+            </td>
+
+        </form>
+        </tr>
+        {% endfor %}
+        </tbody>
+
+    </table>
+    </div>
+
+    <!-- Logout -->
+    <div class="text-center mt-4">
+        <a href="/logout" class="btn btn-danger px-4">Logout</a>
+    </div>
+
+</div>
+
+</body>
+</html>
