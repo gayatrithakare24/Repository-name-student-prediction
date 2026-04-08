@@ -1,208 +1,170 @@
-from flask import Flask, render_template, request, redirect, session
-import pandas as pd
 import sqlite3
-from sklearn.linear_model import LogisticRegression
-import re
+from flask import Flask, render_template, request, redirect, session, send_file
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
 
 app = Flask(__name__)
 app.secret_key = "secret"
 
-# ---------------- DATABASE ----------------
 conn = sqlite3.connect("users.db", check_same_thread=False)
 cursor = conn.cursor()
 
+# USERS
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users(
-    username TEXT PRIMARY KEY,
-    password TEXT,
-    section TEXT,
-    question TEXT,
-    answer TEXT
+username TEXT PRIMARY KEY,
+password TEXT,
+question TEXT,
+answer TEXT
 )
 """)
 
+# STUDENTS
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS students(
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT,
-    section TEXT,
-    attendance INTEGER,
-    study_hours INTEGER,
-    unit1 INTEGER,
-    unit2 INTEGER,
-    endsem INTEGER
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+name TEXT,
+teacher TEXT,
+study REAL,
+attendance REAL,
+m1 REAL,
+m2 REAL,
+m3 REAL,
+result TEXT,
+score REAL
 )
 """)
 
 conn.commit()
 
-# ---------------- PASSWORD POLICY ----------------
-def valid_password(pwd):
-    if len(pwd) < 6:
-        return False
-    if not re.search("[A-Z]", pwd):
-        return False
-    if not re.search("[0-9]", pwd):
-        return False
-    return True
-
-# ---------------- MODEL ----------------
-data = pd.read_csv("student_data.csv")
-X = data[['hours','attendance','marks']]
-y = data['result']
-
-model = LogisticRegression()
-model.fit(X, y)
-
-# ---------------- LOGIN ----------------
+# LOGIN
 @app.route('/', methods=['GET','POST'])
 def login():
     if request.method == 'POST':
-        user = request.form['username']
-        pwd = request.form['password']
-
-        cursor.execute("SELECT * FROM users WHERE username=? AND password=?", (user,pwd))
+        u = request.form['username']
+        p = request.form['password']
+        cursor.execute("SELECT * FROM users WHERE username=? AND password=?", (u,p))
         if cursor.fetchone():
-            session['user'] = user
+            session['user'] = u
             return redirect('/dashboard')
-        else:
-            return render_template("login.html", msg="Invalid Login")
-
     return render_template('login.html')
 
-# ---------------- REGISTER ----------------
+# REGISTER
 @app.route('/register', methods=['GET','POST'])
 def register():
     if request.method == 'POST':
-        user = request.form.get('username')
-        pwd = request.form.get('password')
-        section = request.form.get('section')
-        question = request.form.get('question')
-        answer = request.form.get('answer')
-
-        if not valid_password(pwd):
-            return render_template("register.html",
-                                   msg="Password must have 6+ chars, 1 Capital, 1 Number")
-
-        cursor.execute("SELECT * FROM users WHERE username=?", (user,))
-        if cursor.fetchone():
-            return render_template("register.html", msg="User already exists!")
-
-        cursor.execute("INSERT INTO users VALUES (?,?,?,?,?)",
-                       (user, pwd, section, question, answer))
+        cursor.execute("INSERT INTO users VALUES (?,?,?,?)",
+                       (request.form['username'],request.form['password'],
+                        request.form['question'],request.form['answer']))
         conn.commit()
-
         return redirect('/')
-
     return render_template('register.html')
 
-# ---------------- FORGOT PASSWORD ----------------
-@app.route('/forgot', methods=['GET','POST'])
-def forgot():
-    if request.method == 'POST':
-        user = request.form.get('username')
-
-        cursor.execute("SELECT question FROM users WHERE username=?", (user,))
-        data = cursor.fetchone()
-
-        if not data:
-            return render_template("forgot.html", msg="User not found")
-
-        session['reset_user'] = user
-        return render_template("verify_answer.html", question=data[0])
-
-    return render_template("forgot.html")
-
-# ---------------- VERIFY ANSWER ----------------
-@app.route('/verify_answer', methods=['POST'])
-def verify_answer():
-    answer = request.form.get('answer')
-    user = session.get('reset_user')
-
-    cursor.execute("SELECT answer FROM users WHERE username=?", (user,))
-    real_answer = cursor.fetchone()[0]
-
-    if answer.lower() == real_answer.lower():
-        return render_template("reset.html")
-    else:
-        return "Wrong Answer"
-
-# ---------------- RESET PASSWORD ----------------
-@app.route('/reset', methods=['POST'])
-def reset():
-    new_pwd = request.form.get('password')
-    user = session.get('reset_user')
-
-    cursor.execute("UPDATE users SET password=? WHERE username=?", (new_pwd, user))
-    conn.commit()
-
-    return redirect('/')
-
-# ---------------- DASHBOARD ----------------
+# DASHBOARD
 @app.route('/dashboard')
 def dashboard():
-    if 'user' not in session:
-        return redirect('/')
-
     user = session['user']
+    cursor.execute("SELECT * FROM students WHERE teacher=? ORDER BY score DESC", (user,))
+    students = cursor.fetchall()
+    return render_template('dashboard.html', students=students, tips={})
 
-    cursor.execute("SELECT section FROM users WHERE username=?", (user,))
-    section = cursor.fetchone()[0]
-
-    students = pd.read_sql_query(
-        "SELECT * FROM students WHERE section=?",
-        conn,
-        params=(section,)
-    )
-
-    return render_template("dashboard.html",
-                           students=students.to_dict(orient='records'),
-                           section=section)
-
-# ---------------- ADD STUDENT ----------------
+# ADD
 @app.route('/add_student', methods=['POST'])
-def add_student():
-    name = request.form['name']
-    section = request.form['section']
-
+def add():
     cursor.execute("""
-    INSERT INTO students(name,section,attendance,study_hours,unit1,unit2,endsem)
-    VALUES (?,?,0,0,0,0,0)
-    """, (name, section))
+    INSERT INTO students(name, teacher, study, attendance, m1, m2, m3, result, score)
+    VALUES (?, ?,0,0,0,0,0,'',0)
+    """, (request.form['name'], session['user']))
+    conn.commit()
+    return redirect('/dashboard')
+
+# DELETE
+@app.route('/delete/<int:id>')
+def delete(id):
+    cursor.execute("DELETE FROM students WHERE id=?", (id,))
+    conn.commit()
+    return redirect('/dashboard')
+
+# CSV UPLOAD (FIXED)
+@app.route('/upload', methods=['POST'])
+def upload():
+    file = request.files['file']
+
+    if file.filename == "":
+        return "No file selected ❌"
+
+    data = file.read().decode("utf-8").splitlines()
+
+    for line in data:
+        name = line.strip()
+        if name:
+            cursor.execute("""
+            INSERT INTO students(name, teacher, study, attendance, m1, m2, m3, result, score)
+            VALUES (?, ?,0,0,0,0,0,'',0)
+            """, (name, session['user']))
 
     conn.commit()
     return redirect('/dashboard')
 
-# ---------------- UPDATE + PREDICT ----------------
-@app.route('/update/<int:id>', methods=['POST'])
-def update(id):
-    attendance = int(request.form['attendance'])
-    study_hours = int(request.form['study_hours'])
-    unit1 = int(request.form['unit1'])
-    unit2 = int(request.form['unit2'])
-    endsem = int(request.form['endsem'])
+# PREDICT
+@app.route('/predict', methods=['POST'])
+def predict():
+    study = float(request.form['study'])
+    att = float(request.form['att'])
+    m1 = float(request.form['m1'])
+    m2 = float(request.form['m2'])
+    m3 = float(request.form['m3'])
+    sid = int(request.form['id'])
+
+    ut_avg = (m1+m2)/2
+    score = (ut_avg/20)*30 + (m3/60)*50 + (att/100)*10 + (study/5)*10
+
+    level = "EXCELLENT" if score>=75 else "AVERAGE" if score>=50 else "WEAK"
+    status = "PASS" if score>=40 else "FAIL"
+    result = f"{level} ({status})"
+
+    suggestions=[]
+    if study<2: suggestions.append("Study more 📚")
+    if att<75: suggestions.append("Improve attendance 🏫")
+    if ut_avg<10: suggestions.append("Focus UT ✍️")
+    if m3<30: suggestions.append("Improve ESE 🎯")
+
+    tip=" | ".join(suggestions)
 
     cursor.execute("""
-    UPDATE students 
-    SET attendance=?, study_hours=?, unit1=?, unit2=?, endsem=?
+    UPDATE students SET study=?,attendance=?,m1=?,m2=?,m3=?,result=?,score=?
     WHERE id=?
-    """, (attendance, study_hours, unit1, unit2, endsem, id))
-
+    """,(study,att,m1,m2,m3,result,score,sid))
     conn.commit()
 
-    avg_marks = (unit1 + unit2 + endsem) / 3
+    cursor.execute("SELECT * FROM students WHERE teacher=? ORDER BY score DESC", (session['user'],))
+    students = cursor.fetchall()
 
-    pred = model.predict([[study_hours, attendance, avg_marks]])
-    result = "PASS" if pred[0] == 1 else "FAIL"
+    return render_template('dashboard.html', students=students, tips={sid:tip})
 
-    return redirect(f"/dashboard?result_{id}={result}")
+# PDF
+@app.route('/pdf/<int:id>')
+def pdf(id):
+    cursor.execute("SELECT * FROM students WHERE id=?", (id,))
+    s = cursor.fetchone()
 
-# ---------------- LOGOUT ----------------
+    file = "report.pdf"
+    doc = SimpleDocTemplate(file)
+    styles = getSampleStyleSheet()
+
+    content = []
+    content.append(Paragraph(f"Name: {s[1]}", styles['Normal']))
+    content.append(Paragraph(f"Result: {s[8]}", styles['Normal']))
+    content.append(Paragraph(f"Score: {s[9]:.2f}", styles['Normal']))
+    content.append(Spacer(1,20))
+
+    doc.build(content)
+    return send_file(file, as_attachment=True)
+
+# LOGOUT
 @app.route('/logout')
 def logout():
     session.clear()
     return redirect('/')
 
-# ---------------- RUN ----------------
-if __name__ == "__main__":
-    app.run(debug=True)
+app.run(debug=True)
