@@ -1,16 +1,18 @@
 import sqlite3
+import os
 from flask import Flask, render_template, request, redirect, session, send_file
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
-from model import predict_result   # 🔥 ML IMPORT
+from model import predict_result
 
 app = Flask(__name__)
 app.secret_key = "secret"
 
+# DATABASE
 conn = sqlite3.connect("users.db", check_same_thread=False)
 cursor = conn.cursor()
 
-# USERS
+# USERS TABLE
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users(
 username TEXT PRIMARY KEY,
@@ -20,7 +22,7 @@ answer TEXT
 )
 """)
 
-# STUDENTS
+# STUDENTS TABLE
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS students(
 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,12 +66,13 @@ def register():
 # DASHBOARD
 @app.route('/dashboard')
 def dashboard():
-    user = session['user']
-    cursor.execute("SELECT * FROM students WHERE teacher=? ORDER BY score DESC", (user,))
+    if 'user' not in session:
+        return redirect('/')
+    cursor.execute("SELECT * FROM students WHERE teacher=? ORDER BY score DESC", (session['user'],))
     students = cursor.fetchall()
     return render_template('dashboard.html', students=students, tips={})
 
-# ADD
+# ADD STUDENT
 @app.route('/add_student', methods=['POST'])
 def add():
     cursor.execute("""
@@ -79,7 +82,7 @@ def add():
     conn.commit()
     return redirect('/dashboard')
 
-# DELETE
+# DELETE STUDENT
 @app.route('/delete/<int:id>')
 def delete(id):
     cursor.execute("DELETE FROM students WHERE id=?", (id,))
@@ -103,7 +106,7 @@ def upload():
     conn.commit()
     return redirect('/dashboard')
 
-# 🔥 PREDICT USING ML
+# 🔥 PREDICT (ML)
 @app.route('/predict', methods=['POST'])
 def predict():
     study = float(request.form['study'])
@@ -115,12 +118,11 @@ def predict():
 
     ut_avg = (m1 + m2) / 2
 
-    # 🔥 ML prediction integration with flask
+    # ML prediction
     result_ml = predict_result(study, att, ut_avg, m3)
-
     status = "PASS" if result_ml == 1 else "FAIL"
 
-    # Level (for graph)
+    # Level
     if m3 >= 50:
         level = "EXCELLENT"
     elif m3 >= 30:
@@ -130,7 +132,7 @@ def predict():
 
     final_result = f"{level} ({status})"
 
-    # Score (for ranking)
+    # Score for ranking
     score = (ut_avg/20)*30 + (m3/60)*50 + (att/100)*10 + (study/5)*10
 
     cursor.execute("""
@@ -145,7 +147,7 @@ def predict():
 
     return render_template('dashboard.html', students=students, tips={})
 
-# PDF
+# PDF REPORT
 @app.route('/pdf/<int:id>')
 def pdf(id):
     cursor.execute("SELECT * FROM students WHERE id=?", (id,))
@@ -170,4 +172,6 @@ def logout():
     session.clear()
     return redirect('/')
 
-app.run(debug=True)
+# 🔥 IMPORTANT FOR RENDER
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
