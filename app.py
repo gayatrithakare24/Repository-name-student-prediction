@@ -2,6 +2,7 @@ import sqlite3
 from flask import Flask, render_template, request, redirect, session, send_file
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
+from model import predict_result   # 🔥 ML IMPORT
 
 app = Flask(__name__)
 app.secret_key = "secret"
@@ -85,14 +86,10 @@ def delete(id):
     conn.commit()
     return redirect('/dashboard')
 
-# CSV UPLOAD (FIXED)
+# CSV UPLOAD
 @app.route('/upload', methods=['POST'])
 def upload():
     file = request.files['file']
-
-    if file.filename == "":
-        return "No file selected ❌"
-
     data = file.read().decode("utf-8").splitlines()
 
     for line in data:
@@ -106,7 +103,7 @@ def upload():
     conn.commit()
     return redirect('/dashboard')
 
-# PREDICT
+# 🔥 PREDICT USING ML
 @app.route('/predict', methods=['POST'])
 def predict():
     study = float(request.form['study'])
@@ -116,31 +113,37 @@ def predict():
     m3 = float(request.form['m3'])
     sid = int(request.form['id'])
 
-    ut_avg = (m1+m2)/2
+    ut_avg = (m1 + m2) / 2
+
+    # 🔥 ML prediction integration with flask
+    result_ml = predict_result(study, att, ut_avg, m3)
+
+    status = "PASS" if result_ml == 1 else "FAIL"
+
+    # Level (for graph)
+    if m3 >= 50:
+        level = "EXCELLENT"
+    elif m3 >= 30:
+        level = "AVERAGE"
+    else:
+        level = "WEAK"
+
+    final_result = f"{level} ({status})"
+
+    # Score (for ranking)
     score = (ut_avg/20)*30 + (m3/60)*50 + (att/100)*10 + (study/5)*10
-
-    level = "EXCELLENT" if score>=75 else "AVERAGE" if score>=50 else "WEAK"
-    status = "PASS" if score>=40 else "FAIL"
-    result = f"{level} ({status})"
-
-    suggestions=[]
-    if study<2: suggestions.append("Study more 📚")
-    if att<75: suggestions.append("Improve attendance 🏫")
-    if ut_avg<10: suggestions.append("Focus UT ✍️")
-    if m3<30: suggestions.append("Improve ESE 🎯")
-
-    tip=" | ".join(suggestions)
 
     cursor.execute("""
     UPDATE students SET study=?,attendance=?,m1=?,m2=?,m3=?,result=?,score=?
     WHERE id=?
-    """,(study,att,m1,m2,m3,result,score,sid))
+    """,(study,att,m1,m2,m3,final_result,score,sid))
+
     conn.commit()
 
     cursor.execute("SELECT * FROM students WHERE teacher=? ORDER BY score DESC", (session['user'],))
     students = cursor.fetchall()
 
-    return render_template('dashboard.html', students=students, tips={sid:tip})
+    return render_template('dashboard.html', students=students, tips={})
 
 # PDF
 @app.route('/pdf/<int:id>')
